@@ -1,7 +1,7 @@
 use ggez::{
     self,
     event,
-    graphics::{self, Mesh, Color},
+    graphics::{self, Mesh, Color, DrawMode},
     Context,
     GameError,
     input::keyboard::KeyCode,
@@ -11,13 +11,26 @@ const MAP_PATH: &str = "map.txt";
 const X_RESOLUTION: f32 = 640.0;
 const Y_RESOLUTION: f32 = 480.0;
 const FIELD_OF_VIEW: f32 = 0.60; // works out to ~60 degrees
-const MOVE_SPEED: f32 = 1.5; // In units / second
-const ROTATION_SPEED: f32 = 1.2; // In radians / second 
+const MOVE_SPEED: f32 = 2.5; // In units / second
+const ROTATION_SPEED: f32 = 1.6; // In radians / second
 
 #[derive(Debug, Clone, Copy)]
 enum Wall {
     Brick,
+    Stone,
+    Wood,
     Fallback,
+}
+
+impl Wall {
+    fn color(&self) -> Color {
+        match self {
+            Self::Brick => Color::from_rgb(124, 9, 2),
+            Self::Stone => Color::from_rgb(112, 128, 144),
+            Self::Wood => Color::from_rgb(193, 154, 107),
+            _ => {Color::MAGENTA},
+        }
+    }
 }
 
 enum Side {
@@ -94,8 +107,22 @@ impl event::EventHandler for GameState {
 
         let mut canvas = graphics::Canvas::from_frame(
             ctx,
-            graphics::Color::from_rgb(0, 0, 0)
+            graphics::Color::WHITE,
         );
+
+        // Draw the background
+        let ground = Mesh::new_rectangle(ctx,
+            DrawMode::fill(),
+            graphics::Rect::new(0.0, 0.0, X_RESOLUTION, Y_RESOLUTION / 2.0),
+            Color::from_rgb(34, 139, 34)
+        )?;
+        canvas.draw(&ground, vec2(0.0, Y_RESOLUTION / 2.0));
+        let sky = Mesh::new_rectangle(ctx,
+            DrawMode::fill(),
+            graphics::Rect::new(0.0, 0.0, X_RESOLUTION, Y_RESOLUTION / 2.0),
+            Color::from_rgb(135, 206, 235)
+        )?;
+        canvas.draw(&sky, vec2(0.0, 0.0));
 
         // ---- THIS IS WHERE THE RAYCASTING HAPPENS ----
         // Algorithm courtesy of Lode's Computer Graphics Tutorial
@@ -144,10 +171,7 @@ impl event::EventHandler for GameState {
                 Side::NorthSouth => y_distance - delta_y
             };
             // Draw the line
-            let mut color = match wall_type {
-                Wall::Brick => Color::RED,
-                Wall::Fallback => Color::MAGENTA,
-            };
+            let mut color = wall_type.color();
             match side {
                 Side::EastWest => {
                     color.r -= 0.25;
@@ -180,7 +204,9 @@ fn parse_map(map_str: &str) -> Vec<Vec<Option<Wall>>> {
             line.chars()
                 .map(|char| match char {
                     '.' => None,
-                    '#' => Some(Wall::Brick),
+                    'B' => Some(Wall::Brick),
+                    'S' => Some(Wall::Stone),
+                    'W' => Some(Wall::Wood),
                     _ => Some(Wall::Fallback),
                 })
                 .collect::<Vec<Option<Wall>>>()
@@ -189,7 +215,8 @@ fn parse_map(map_str: &str) -> Vec<Vec<Option<Wall>>> {
 }
 
 fn main() {
-    let builder = ggez::ContextBuilder::new("Raycast test", "sagakar");
+    let setup = ggez::conf::WindowSetup::default().title("Raycast test");
+    let builder = ggez::ContextBuilder::new("Raycast test", "sagakar").window_setup(setup);
     let (mut context, events) = builder.build().expect("Failed to build context");
     let window_mode = ggez::conf::WindowMode::default().dimensions(X_RESOLUTION, Y_RESOLUTION);
     context.gfx.set_mode(window_mode).expect("Failed to set window mode");
