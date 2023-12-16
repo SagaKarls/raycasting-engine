@@ -163,32 +163,36 @@ impl event::EventHandler for GameState {
         self.gfx.ceiling_batch.clear();
         for y in 0..(Y_RESOLUTION as u32 / 2) {
             let y = y as f32;
+            // Vectors pointing along the left and right edges of the FOV
             let ray_left = self.player.direction - self.player.camera;
             let ray_right = self.player.direction + self.player.camera;
-            let horizon_distance = y - Y_RESOLUTION * HORIZON_HEIGHT;
-            let camera_height = Y_RESOLUTION * CAMERA_HEIGHT;
-            let row_distance = camera_height / horizon_distance;
+            let horizon_distance = y - Y_RESOLUTION * HORIZON_HEIGHT; // Pixel distance between current y and the horizon
+            let camera_height = Y_RESOLUTION * CAMERA_HEIGHT; // Pixel height of the camera
+            let row_distance = camera_height / horizon_distance; // Distance of row from player
             let x_step = row_distance * (ray_right.x - ray_left.x) / X_RESOLUTION;
             let y_step = row_distance * (ray_right.y - ray_left.y) / X_RESOLUTION;
+            // Float world position of pixel
             let mut floor_x = row_distance * ray_left.x - self.player.position.x;
             let mut floor_y = row_distance * ray_left.y - self.player.position.y;
             for x in 0..(X_RESOLUTION as u32) {
                 let x = x as f32;
+                // Tile position
                 let cell_x = floor_x.floor();
                 let cell_y = floor_y.floor();
+                // Position in current tile
                 let texture_x =  floor_x - cell_x;
                 let texture_y = floor_y - cell_y;
-                let src_rect = Rect::new(texture_x, texture_y, PIXEL_FRAC, PIXEL_FRAC);
+                let current_pixel = Rect::new(texture_x, texture_y, PIXEL_FRAC, PIXEL_FRAC);
 
                 floor_x += x_step;
                 floor_y += y_step;
 
-                // Add floor to batch
-                let floor_params = DrawParam::new().src(src_rect).dest(vec2(x, Y_RESOLUTION - y - 1.0));
+                // Add floor pixel to batch
+                let floor_params = DrawParam::new().src(current_pixel).dest(vec2(x, Y_RESOLUTION - y - 1.0));
                 self.gfx.floor_batch.push(floor_params);
 
-                // Add ceiling to batch
-                let ceiling_params = DrawParam::new().src(src_rect).dest(vec2(x, y));
+                // Add ceiling pixel to batch
+                let ceiling_params = DrawParam::new().src(current_pixel).dest(vec2(x, y));
                 self.gfx.ceiling_batch.push(ceiling_params);
                 
             }
