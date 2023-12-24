@@ -51,15 +51,38 @@ struct Gfx {
     ceiling_batch: InstanceArray,
 }
 
-struct GameState {
+struct Level {
     map: Vec<Vec<Option<usize>>>,
+    decorations: Vec<Decoration>
+}
+
+struct Decoration {
+    sprite: Image,
+    position: Vec2,
+    facing: bool,
+}
+
+impl Decoration {
+    fn new<T: Into<Vec2>>(ctx: &Context, sprite_path: &str, position: T, facing: bool) -> Result<Decoration, GameError>{
+        Ok(
+            Decoration {
+                sprite: Image::from_path(ctx, sprite_path)?,
+                position: position.into(),
+                facing
+            }
+        )
+    }
+}
+
+struct GameState {
+    level: Level,
     player: Player,
     gfx: Gfx,
     time_context: TimeContext
 }
 
 impl GameState {
-    fn new(ctx: &Context, map: Vec<Vec<Option<usize>>>, player_position: Vec2, direction_vector: Vec2) -> Result<GameState, GameError> {
+    fn new(ctx: &Context, level: Level, player_position: Vec2, direction_vector: Vec2) -> Result<GameState, GameError> {
         let direction = direction_vector.normalize(); // Make sure it's normalized!!
         let textures = vec![
             Image::from_path(ctx, "/textures/stone.png")?,
@@ -86,7 +109,7 @@ impl GameState {
         };
 
         Ok(GameState {
-            map,
+            level,
             player,
             gfx,
             time_context: TimeContext::new()
@@ -99,18 +122,18 @@ impl GameState {
         let direction_x = self.player.direction.x;
         let direction_y = self.player.direction.y;
         if ctx.keyboard.is_key_pressed(KeyCode::W) {
-            if let None = self.map[player_y as usize][(player_x + direction_x) as usize] {
+            if let None = self.level.map[player_y as usize][(player_x + direction_x) as usize] {
                 self.player.position.x += direction_x * MOVE_SPEED * delta;
             }
-            if let None = self.map[(player_y + direction_y) as usize][player_x as usize] {
+            if let None = self.level.map[(player_y + direction_y) as usize][player_x as usize] {
                 self.player.position.y += direction_y * MOVE_SPEED * delta;
             }
         }
         if ctx.keyboard.is_key_pressed(KeyCode::S) {
-            if let None = self.map[player_y as usize][(player_x - direction_x) as usize] {
+            if let None = self.level.map[player_y as usize][(player_x - direction_x) as usize] {
                 self.player.position.x -= direction_x * MOVE_SPEED * delta;
             }
-            if let None = self.map[(player_y - direction_y) as usize][player_x as usize] {
+            if let None = self.level.map[(player_y - direction_y) as usize][player_x as usize] {
                 self.player.position.y -= direction_y * MOVE_SPEED * delta;
             }
         }
@@ -183,7 +206,7 @@ impl event::EventHandler for GameState {
                     map_y += y_step;
                     side = Side::NorthSouth;
                 }
-                if let Some(index) = self.map[map_y as usize][map_x as usize] {
+                if let Some(index) = self.level.map[map_y as usize][map_x as usize] {
                     hit = true;
                     texture_index = index;
                 } 
@@ -300,10 +323,14 @@ fn main() {
     // ----Game state setup----
     let map_string = std::fs::read_to_string(MAP_PATH).expect("Failed reading map file");
     let map = parse_map(&map_string);
+    let level = Level {
+        map,
+        decorations: vec![]
+    };
     // Create the texture hashmap
     let state = GameState::new(
         &context,
-        map,
+        level,
         vec2(3.0, 3.0),
         vec2(0.0, -1.0)
     ).expect("Failed to construct game instance");
