@@ -14,8 +14,8 @@ const MOVE_SPEED: f32 = 2.5; // In units / second
 const ROTATION_SPEED: f32 = 1.6; // In radians / second
 
 // Rendering parameters
-const X_RESOLUTION: f32 = 320.0;
-const Y_RESOLUTION: f32 = 240.0;
+const X_RESOLUTION: f32 = 640.0;
+const Y_RESOLUTION: f32 = 360.0;
 const FIELD_OF_VIEW: f32 = 0.60; // works out to ~60 degrees
 const TEXTURE_SIZE: u32 = 64;
 const PIXEL_FRAC: f32 = 1.0 / TEXTURE_SIZE as f32;
@@ -139,8 +139,9 @@ impl event::EventHandler for GameState {
             ctx,
             graphics::Color::WHITE,
         );
+        canvas.set_screen_coordinates(Rect::new(0.0, 0.0, X_RESOLUTION, Y_RESOLUTION));
 
-        // ---- THIS IS WHERE THERAYCASTING HAPPENS ----
+        // ---- THIS IS WHERE THE RAYCASTING HAPPENS ----
         // Algorithm courtesy of Lode's Computer Graphics Tutorial
         // https://lodev.org/cgtutor/raycasting.html
         // Rustified and adapted by me
@@ -291,7 +292,9 @@ fn main() {
     let setup = ggez::conf::WindowSetup::default().title("Raycast test");
     let builder = ggez::ContextBuilder::new("Raycast test", "sagakar").window_setup(setup);
     let (mut context, events) = builder.build().expect("Failed to build context");
-    let window_mode = ggez::conf::WindowMode::default().dimensions(X_RESOLUTION, Y_RESOLUTION);
+    let window_mode = ggez::conf::WindowMode::default()
+    .borderless(true)
+    .fullscreen_type(ggez::conf::FullscreenType::Desktop);
     context.gfx.set_mode(window_mode).expect("Failed to set window mode");
 
     // ----Game state setup----
