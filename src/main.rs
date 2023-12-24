@@ -140,71 +140,15 @@ impl event::EventHandler for GameState {
             graphics::Color::WHITE,
         );
 
-        // Draw the background
-        let ground = Mesh::new_rectangle(ctx,
-            DrawMode::fill(),
-            graphics::Rect::new(0.0, 0.0, X_RESOLUTION, Y_RESOLUTION / 2.0),
-            Color::from_rgb(34, 139, 34)
-        )?;
-        canvas.draw(&ground, vec2(0.0, Y_RESOLUTION / 2.0));
-        let sky = Mesh::new_rectangle(ctx,
-            DrawMode::fill(),
-            graphics::Rect::new(0.0, 0.0, X_RESOLUTION, Y_RESOLUTION / 2.0),
-            Color::from_rgb(135, 206, 235)
-        )?;
-        canvas.draw(&sky, vec2(0.0, 0.0));
-
-        // ---- THIS IS WHERE THE RAYCASTING HAPPENS ----
+        // ---- THIS IS WHERE THERAYCASTING HAPPENS ----
         // Algorithm courtesy of Lode's Computer Graphics Tutorial
         // https://lodev.org/cgtutor/raycasting.html
         // Rustified and adapted by me
-        // --- Draw floor and ceiling ---
-        self.gfx.floor_batch.clear();
-        self.gfx.ceiling_batch.clear();
-        for y in 0..(Y_RESOLUTION as u32 / 2) {
-            let y = y as f32;
-            // Vectors pointing along the left and right edges of the FOV
-            let ray_left = self.player.direction - self.player.camera;
-            let ray_right = self.player.direction + self.player.camera;
-            let horizon_distance = y - Y_RESOLUTION * HORIZON_HEIGHT; // Pixel distance between current y and the horizon
-            let camera_height = Y_RESOLUTION * CAMERA_HEIGHT; // Pixel height of the camera
-            let row_distance = camera_height / horizon_distance; // Distance of row from player
-            let x_step = row_distance * (ray_right.x - ray_left.x) / X_RESOLUTION;
-            let y_step = row_distance * (ray_right.y - ray_left.y) / X_RESOLUTION;
-            // Float world position of pixel
-            let mut floor_x = row_distance * ray_left.x - self.player.position.x;
-            let mut floor_y = row_distance * ray_left.y - self.player.position.y;
-            for x in 0..(X_RESOLUTION as u32) {
-                let x = x as f32;
-                // Tile position
-                let cell_x = floor_x.floor();
-                let cell_y = floor_y.floor();
-                // Position in current tile
-                let texture_x =  floor_x - cell_x;
-                let texture_y = floor_y - cell_y;
-                let current_pixel = Rect::new(texture_x, texture_y, PIXEL_FRAC, PIXEL_FRAC);
-
-                floor_x += x_step;
-                floor_y += y_step;
-
-                // Add floor pixel to batch
-                let floor_params = DrawParam::new().src(current_pixel).dest(vec2(x, Y_RESOLUTION - y - 1.0));
-                self.gfx.floor_batch.push(floor_params);
-
-                // Add ceiling pixel to batch
-                let ceiling_params = DrawParam::new().src(current_pixel).dest(vec2(x, y));
-                self.gfx.ceiling_batch.push(ceiling_params);
-                
-            }
-        }
-
-        canvas.draw(&self.gfx.floor_batch, vec2(0.0, 0.0));
-        canvas.draw(&self.gfx.ceiling_batch, vec2(0.0, 0.0));
-        
         for batch in &mut self.gfx.wall_batches {
             batch.clear();
         }
-        // --- Draw walls ---
+        let mut wall_mask: Vec<f32> = vec![]; // Keep track of where the wall starts for every screenspace x
+        // --- Create wall batches ---
         for x in 0..(X_RESOLUTION as u32) {
             let x = x as f32; // Re-floatify x to enable use in graphics drawing
             // Create a direction vector for the ray
@@ -266,9 +210,51 @@ impl event::EventHandler for GameState {
             .scale(vec2(1.0, height * PIXEL_FRAC));
             texture_index = texture_index.clamp(0, self.gfx.wall_batches.len() - 1);
             self.gfx.wall_batches[texture_index].push(params);
+            wall_mask.push(y0);
         }
-        // Draw batched textures
-        for (batch) in &self.gfx.wall_batches {
+
+        // --- Create floor/ceiling batches ---
+        self.gfx.floor_batch.clear();
+        self.gfx.ceiling_batch.clear();
+        for y in 0..(Y_RESOLUTION as u32 / 2) {
+            let y = y as f32;
+            let ray_left = self.player.direction - self.player.camera;
+            let ray_right = self.player.direction + self.player.camera;
+            let horizon_distance = y - Y_RESOLUTION * HORIZON_HEIGHT;
+            let camera_height = Y_RESOLUTION * CAMERA_HEIGHT;
+            let row_distance = camera_height / horizon_distance;
+            let x_step = row_distance * (ray_right.x - ray_left.x) / X_RESOLUTION;
+            let y_step = row_distance * (ray_right.y - ray_left.y) / X_RESOLUTION;
+            let mut floor_x = row_distance * ray_left.x - self.player.position.x;
+            let mut floor_y = row_distance * ray_left.y - self.player.position.y;
+            for x in 0..(X_RESOLUTION as u32) {
+                let cell_x = floor_x.floor();
+                let cell_y = floor_y.floor();
+                let texture_x =  floor_x - cell_x;
+                let texture_y = floor_y - cell_y;
+                floor_x += x_step;
+                floor_y += y_step;
+                if wall_mask[x as usize] < y {
+                    continue;
+                }
+                let x = x as f32;
+                let src_rect = Rect::new(texture_x, texture_y, PIXEL_FRAC, PIXEL_FRAC);
+                // Add floor to batch
+                let floor_params = DrawParam::new().src(src_rect).dest(vec2(x, Y_RESOLUTION - y - 1.0));
+                self.gfx.floor_batch.push(floor_params);
+                // Add ceiling to batch
+                let ceiling_params = DrawParam::new().src(src_rect).dest(vec2(x, y));
+                self.gfx.ceiling_batch.push(ceiling_params);
+                
+            }
+        }
+    
+        // -- Draw batched textures --
+        // floor and ceiling
+        canvas.draw(&self.gfx.floor_batch, vec2(0.0, 0.0));
+        canvas.draw(&self.gfx.ceiling_batch, vec2(0.0, 0.0));
+        // walls
+        for batch in &self.gfx.wall_batches {
             canvas.draw(batch, vec2(0.0, 0.0));
         }
         // Draw FPS counter
