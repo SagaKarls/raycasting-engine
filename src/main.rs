@@ -59,6 +59,8 @@ struct Level {
 trait Sprite {
     fn sprite(&self) -> Image;
     fn position(&self) -> Vec2;
+    fn scale(&self) -> f32;
+    fn y_offset(&self) -> f32;
 
     fn draw(&self, canvas: &mut Canvas, player: &Player) {
         let sprite = self.sprite();
@@ -70,11 +72,11 @@ trait Sprite {
         let transformed_position = transform_matrix.mul_vec2(relative_position);
         let screen_x = (X_RESOLUTION / 2.0) * (1.0 + transformed_position.x / transformed_position.y);
 
-        let scale = 2.0 / transformed_position.y;
+        let scale = self.scale() / transformed_position.y;
         if scale > 0.0 {
             let param = DrawParam::new()
             .offset(Vec2::new(0.5, 0.5))
-            .dest(Vec2::new(screen_x, Y_RESOLUTION / 2.0))
+            .dest(Vec2::new(screen_x, Y_RESOLUTION / 2.0 + self.y_offset() / transformed_position.y))
             .scale(Vec2::new(scale, scale))
             .z(-(transformed_position.y * 100.0) as i32);
             canvas.draw(&sprite, param);
@@ -85,21 +87,25 @@ trait Sprite {
 struct Decoration {
     sprite: Image,
     position: Vec2,
-    facing: bool,
+    scale: f32,
+    y_offset: f32 // as a fraction of screen height
 }
 
 impl Sprite for Decoration {
     fn sprite(&self) -> Image {self.sprite.clone()}
     fn position(&self) -> Vec2 {self.position}
+    fn scale(&self) -> f32 {self.scale}
+    fn y_offset(&self) -> f32 {self.y_offset}
 }
 
 impl Decoration {
-    fn new<T: Into<Vec2>>(ctx: &Context, sprite_path: &str, position: T, facing: bool) -> Result<Decoration, GameError>{
+    fn new<T: Into<Vec2>>(ctx: &Context, sprite_path: &str, position: T, scale: f32) -> Result<Decoration, GameError>{
         Ok(
             Decoration {
                 sprite: Image::from_path(ctx, sprite_path)?,
                 position: position.into(),
-                facing
+                scale,
+                y_offset: 0.0,
             }
         )
     }
@@ -351,7 +357,7 @@ fn main() {
     let level = Level {
         map,
         decorations: vec![
-            //Decoration::new(&context, "/cat.png", Vec2::new(6.0, 4.0), false).unwrap(),
+            Decoration::new(&context, "/cat.png", Vec2::new(6.0, 4.0), 4.0).unwrap(),
         ]
     };
     // Create the texture hashmap
