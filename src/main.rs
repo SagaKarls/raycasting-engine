@@ -2,7 +2,7 @@ use std::usize;
 use ggez::{
     self,
     event,
-    graphics::{self, Mesh, Color, DrawMode, Image, DrawParam, Rect, Text, Quad, InstanceArray},
+    graphics::{self, Mesh, Color, DrawMode, Image, DrawParam, Rect, Text, Quad, InstanceArray, Canvas},
     Context,
     GameError,
     input::keyboard::KeyCode,
@@ -46,7 +46,7 @@ impl Player {
 }
 
 struct Gfx {
-    wall_batches: Vec<InstanceArray>,
+    wall_textures: Vec<Image>,
     floor_batch: InstanceArray,
     ceiling_batch: InstanceArray,
 }
@@ -56,10 +56,41 @@ struct Level {
     decorations: Vec<Decoration>
 }
 
+trait Sprite {
+    fn sprite(&self) -> Image;
+    fn position(&self) -> Vec2;
+
+    fn draw(&self, canvas: &mut Canvas, player: &Player) {
+        let sprite = self.sprite();
+        let relative_position = self.position() - player.position;
+        let transform_matrix = Mat2::from_cols(
+            Vec2::new(player.camera.x, player.camera.y),
+            Vec2::new(player.direction.x, player.direction.y)
+        ).inverse();
+        let transformed_position = transform_matrix.mul_vec2(relative_position);
+        let screen_x = (X_RESOLUTION / 2.0) * (1.0 + transformed_position.x / transformed_position.y);
+
+        let scale = 2.0 / transformed_position.y;
+        if scale > 0.0 {
+            let param = DrawParam::new()
+            .offset(Vec2::new(0.5, 0.5))
+            .dest(Vec2::new(screen_x, Y_RESOLUTION / 2.0))
+            .scale(Vec2::new(scale, scale))
+            .z(-(transformed_position.y * 100.0) as i32);
+            canvas.draw(&sprite, param);
+        }
+    }
+}
+
 struct Decoration {
     sprite: Image,
     position: Vec2,
     facing: bool,
+}
+
+impl Sprite for Decoration {
+    fn sprite(&self) -> Image {self.sprite.clone()}
+    fn position(&self) -> Vec2 {self.position}
 }
 
 impl Decoration {
@@ -84,19 +115,14 @@ struct GameState {
 impl GameState {
     fn new(ctx: &Context, level: Level, player_position: Vec2, direction_vector: Vec2) -> Result<GameState, GameError> {
         let direction = direction_vector.normalize(); // Make sure it's normalized!!
-        let textures = vec![
+        let wall_textures = vec![
             Image::from_path(ctx, "/textures/stone.png")?,
             Image::from_path(ctx, "/textures/brick.png")?,
             Image::from_path(ctx, "/textures/wood.png")?,
+            Image::from_color(ctx, 64, 64, Some(Color::MAGENTA)),
         ];
-        let mut wall_batches = textures
-        .into_iter()
-        .map(|texture| InstanceArray::new(ctx, texture))
-        .collect::<Vec<InstanceArray>>();
-        let fallback_texture = Image::from_color(ctx, 64, 64, Some(Color::MAGENTA));
-        wall_batches.push(InstanceArray::new(ctx, fallback_texture));
         let gfx = Gfx {
-            wall_batches,
+            wall_textures,
             floor_batch: InstanceArray::new(ctx, Image::from_path(ctx, "/textures/floor.png")?),
             ceiling_batch: InstanceArray::new(ctx, Image::from_path(ctx, "/textures/ceiling.png")?),
         };
@@ -168,9 +194,6 @@ impl event::EventHandler for GameState {
         // Algorithm courtesy of Lode's Computer Graphics Tutorial
         // https://lodev.org/cgtutor/raycasting.html
         // Rustified and adapted by me
-        for batch in &mut self.gfx.wall_batches {
-            batch.clear();
-        }
         let mut wall_mask: Vec<f32> = vec![]; // Keep track of where the wall starts for every screenspace x
         // --- Create wall batches ---
         for x in 0..(X_RESOLUTION as u32) {
@@ -231,9 +254,10 @@ impl event::EventHandler for GameState {
             let params = DrawParam::new()
             .src(Rect::new(texture_x * PIXEL_FRAC, 0.0, PIXEL_FRAC, 1.0))
             .dest(vec2(x, y0))
-            .scale(vec2(1.0, height * PIXEL_FRAC));
-            texture_index = texture_index.clamp(0, self.gfx.wall_batches.len() - 1);
-            self.gfx.wall_batches[texture_index].push(params);
+            .scale(vec2(1.0, height * PIXEL_FRAC))
+            .z(-(perpendicular_distance * 100.0) as i32);
+            texture_index = texture_index.clamp(0, self.gfx.wall_textures.len() - 1);
+            canvas.draw(&self.gfx.wall_textures[texture_index], params);
             wall_mask.push(y0);
         }
 
@@ -275,36 +299,13 @@ impl event::EventHandler for GameState {
 
         // -- Draw decorations --
         for item in &self.level.decorations {
-            let sprite = &item.sprite;
-            let relative_position = item.position - self.player.position;
-            let transform_matrix = Mat2::from_cols(
-                Vec2::new(self.player.camera.x, self.player.camera.y),
-                Vec2::new(self.player.direction.x, self.player.direction.y)
-            ).inverse();
-            let transformed_position = transform_matrix.mul_vec2(relative_position);
-            let screen_x = (X_RESOLUTION / 2.0)
-            * (1.0 + transformed_position.x / transformed_position.y)
-            - sprite.width() as f32 / 2.0;
-
-            let scale = 2.0 / transformed_position.y;
-            if scale > 0.0 {
-                let param = DrawParam::new()
-                .offset(Vec2::new(0.0, 0.5))
-                .dest(Vec2::new(screen_x, Y_RESOLUTION / 2.0))
-                .scale(Vec2::new(scale, scale))
-                .z((transformed_position.y * 100.0) as i32);
-                canvas.draw(sprite, param);
-            }
+            item.draw(&mut canvas, &mut self.player)
         }
 
         // -- Draw batched textures --
         // floor and ceiling
-        canvas.draw(&self.gfx.floor_batch, vec2(0.0, 0.0));
-        canvas.draw(&self.gfx.ceiling_batch, vec2(0.0, 0.0));
-        // walls
-        for batch in &self.gfx.wall_batches {
-            canvas.draw(batch, vec2(0.0, 0.0));
-        }
+        canvas.draw(&self.gfx.floor_batch, DrawParam::new().z(i32::MIN));
+        canvas.draw(&self.gfx.ceiling_batch, DrawParam::new().z(i32::MIN));
         // Draw FPS counter
         let fps = self.time_context.fps();
         let fps_counter = Text::new(format!("{:.2}", fps));
@@ -350,7 +351,7 @@ fn main() {
     let level = Level {
         map,
         decorations: vec![
-            // Decoration::new(&context, "/cat.png", Vec2::new(6.0, 4.0), false).unwrap(),
+            //Decoration::new(&context, "/cat.png", Vec2::new(6.0, 4.0), false).unwrap(),
         ]
     };
     // Create the texture hashmap
