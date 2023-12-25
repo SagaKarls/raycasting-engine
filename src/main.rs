@@ -272,7 +272,31 @@ impl event::EventHandler for GameState {
                 
             }
         }
-    
+
+        // -- Draw decorations --
+        for item in &self.level.decorations {
+            let sprite = &item.sprite;
+            let relative_position = item.position - self.player.position;
+            let transform_matrix = Mat2::from_cols(
+                Vec2::new(self.player.camera.x, self.player.camera.y),
+                Vec2::new(self.player.direction.x, self.player.direction.y)
+            ).inverse();
+            let transformed_position = transform_matrix.mul_vec2(relative_position);
+            let screen_x = (X_RESOLUTION / 2.0)
+            * (1.0 + transformed_position.x / transformed_position.y)
+            - sprite.width() as f32 / 2.0;
+
+            let scale = 2.0 / transformed_position.y;
+            if scale > 0.0 {
+                let param = DrawParam::new()
+                .offset(Vec2::new(0.0, 0.5))
+                .dest(Vec2::new(screen_x, Y_RESOLUTION / 2.0))
+                .scale(Vec2::new(scale, scale))
+                .z((transformed_position.y * 100.0) as i32);
+                canvas.draw(sprite, param);
+            }
+        }
+
         // -- Draw batched textures --
         // floor and ceiling
         canvas.draw(&self.gfx.floor_batch, vec2(0.0, 0.0));
@@ -325,7 +349,9 @@ fn main() {
     let map = parse_map(&map_string);
     let level = Level {
         map,
-        decorations: vec![]
+        decorations: vec![
+            // Decoration::new(&context, "/cat.png", Vec2::new(6.0, 4.0), false).unwrap(),
+        ]
     };
     // Create the texture hashmap
     let state = GameState::new(
